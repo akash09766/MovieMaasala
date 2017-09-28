@@ -105,6 +105,7 @@ public class PopularMovieAdapter extends RecyclerView.Adapter<PopularMovieAdapte
                 listener.onMovieItemClick(item, (View) holder.mMovieIv);
             }
         });
+
     }
 
 
