@@ -17,6 +17,4 @@ public class MConstants {
     public static final String POLULAR_MOVIES = "movie/popular";
     public static final String LANGAUGE = "en-US";
     public static final String MOVIE_DETAILS_PARCELABLE_FILTER = "moview_details_filter";
-
-
 }
