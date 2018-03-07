@@ -5,6 +5,6 @@ package com.skylightdeveloper.moviemaasala.mvp.presenter;
  */
 
 public interface PopularMoviePresenter {
-    void getPopularMovie(int pageNum);
+    void getPopularMovie(int pageNum, boolean isFirstCall);
     void onDestroy();
 }

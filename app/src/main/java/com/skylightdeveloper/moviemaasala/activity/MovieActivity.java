@@ -21,6 +21,7 @@ import com.skylightdeveloper.moviemaasala.model.Movie;
 import com.skylightdeveloper.moviemaasala.model.MovieData;
 import com.skylightdeveloper.moviemaasala.mvp.presenter.PopularMoviePresenterImpl;
 import com.skylightdeveloper.moviemaasala.mvp.view.MainActivityView;
+import com.skylightdeveloper.moviemaasala.ui.VegaLayoutManager;
 
 import java.util.ArrayList;
 
@@ -44,6 +45,7 @@ public class MovieActivity extends BaseActivity implements MainActivityView, Mov
     private ArrayList<MovieData> movieList = new ArrayList<>();
     private PopularMovieAdapter popularMovieAdapter;
     private ProgressBar mProgressBar;
+    private ProgressBar mProgressBarCenter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -55,10 +57,7 @@ public class MovieActivity extends BaseActivity implements MainActivityView, Mov
 
         DaggerNetComponent.builder().netModule(new NetModule(this, this)).build()
                 .inject(this);
-
-//        dialog = getProgressDialog(getResources().getString(R.string.loading_title));
         getPopularMovieData();
-//        Log.d(TAG, "onCreate: "+getFilesDir().getAbsolutePath());
     }
 
     private void setListenersToViews() {
@@ -84,7 +83,7 @@ public class MovieActivity extends BaseActivity implements MainActivityView, Mov
                 if (!isLoading) {
                     if ((visibleItemCount + firstVisibleItemPosition) >= totalItemCount
                             && firstVisibleItemPosition >= 0 && pageNum <= mTotalPageCount) {
-                        popularMoviePresenter.getPopularMovie(pageNum);
+                        popularMoviePresenter.getPopularMovie(pageNum, false);
                     }
                 }
             }
@@ -94,10 +93,11 @@ public class MovieActivity extends BaseActivity implements MainActivityView, Mov
     private void setIdsToViews() {
         mPopularMovieList = (RecyclerView) findViewById(R.id.popular_movie_list_id);
         mProgressBar = (ProgressBar) findViewById(R.id.prog_id);
+        mProgressBarCenter = (ProgressBar) findViewById(R.id.prog_center_id);
     }
 
     private void getPopularMovieData() {
-        popularMoviePresenter.getPopularMovie(pageNum);
+        popularMoviePresenter.getPopularMovie(pageNum, true);
     }
 
     @Override
@@ -143,6 +143,20 @@ public class MovieActivity extends BaseActivity implements MainActivityView, Mov
     public void hideProgress() {
         isLoading = false;
         mProgressBar.setVisibility(View.GONE);
+    }
+
+    @Override
+    public void showCenterProgress() {
+        isLoading = true;
+        mProgressBarCenter.setVisibility(View.VISIBLE);
+        mPopularMovieList.setVisibility(View.INVISIBLE);
+    }
+
+    @Override
+    public void hideCenterProgress() {
+        isLoading = false;
+        mProgressBarCenter.setVisibility(View.GONE);
+        mPopularMovieList.setVisibility(View.VISIBLE);
     }
 
     @Override

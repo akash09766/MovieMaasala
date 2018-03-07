@@ -19,6 +19,7 @@ public class PopularMoviePresenterImpl implements PopularMoviePresenter, Popular
     private final PopularMovieModel popularMovieModel;
     private MainActivityView mainActivityView;
     private Context context;
+    private boolean isFirstCall;
 
     public PopularMoviePresenterImpl(MainActivityView mainActivityView, Context context) {
         this.mainActivityView = mainActivityView;
@@ -28,8 +29,15 @@ public class PopularMoviePresenterImpl implements PopularMoviePresenter, Popular
 
 
     @Override
-    public void getPopularMovie(int pageNum) {
-        mainActivityView.showProgress();
+    public void getPopularMovie(int pageNum, boolean isFirstCall) {
+        this.isFirstCall = isFirstCall;
+
+        if (isFirstCall) {
+            mainActivityView.showCenterProgress();
+        } else {
+            mainActivityView.showProgress();
+        }
+
         popularMovieModel.getPopularMovie(pageNum);
     }
 
@@ -40,13 +48,22 @@ public class PopularMoviePresenterImpl implements PopularMoviePresenter, Popular
 
     @Override
     public void onError(String error) {
-        mainActivityView.hideProgress();
+
+        if (isFirstCall) {
+            mainActivityView.hideCenterProgress();
+        } else {
+            mainActivityView.hideProgress();
+        }
         mainActivityView.onErrorPopularMovie(error);
     }
 
     @Override
     public void onSuccess(Movie movie) {
-        mainActivityView.hideProgress();
+        if (isFirstCall) {
+            mainActivityView.hideCenterProgress();
+        } else {
+            mainActivityView.hideProgress();
+        }
         mainActivityView.onSuccessPopularMovie(movie);
     }
 

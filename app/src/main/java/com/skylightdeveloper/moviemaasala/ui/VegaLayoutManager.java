@@ -6,21 +6,29 @@ package com.skylightdeveloper.moviemaasala.ui;
  */
 
 import android.graphics.Rect;
+import android.support.v4.util.ArrayMap;
 import android.support.v7.widget.RecyclerView;
 import android.util.SparseArray;
+import android.util.SparseBooleanArray;
 import android.view.View;
 import android.view.ViewGroup;
 
 public class VegaLayoutManager extends RecyclerView.LayoutManager {
 
-    private int mDecoratedMeasuredWidth;
-    private int mDecoratedMeasuredHeight;
     private int scroll = 0;
     private SparseArray<Rect> locationRects = new SparseArray<>();
-    private SparseArray<Boolean> attachedItems = new SparseArray<>();
+    private SparseBooleanArray attachedItems = new SparseBooleanArray();
+    private ArrayMap<Integer, Integer> viewTypeHeightMap = new ArrayMap<>();
+
     private boolean needSnap = false;
     private int lastDy = 0;
     private int maxScroll = -1;
+    private RecyclerView.Adapter adapter;
+    private RecyclerView.Recycler recycler;
+
+    public VegaLayoutManager() {
+        setAutoMeasureEnabled(true);
+    }
 
     @Override
     public RecyclerView.LayoutParams generateDefaultLayoutParams() {
@@ -28,39 +36,76 @@ public class VegaLayoutManager extends RecyclerView.LayoutManager {
     }
 
     @Override
+    public void onAdapterChanged(RecyclerView.Adapter oldAdapter, RecyclerView.Adapter newAdapter) {
+        super.onAdapterChanged(oldAdapter, newAdapter);
+        this.adapter = newAdapter;
+    }
+
+    @Override
     public void onLayoutChildren(RecyclerView.Recycler recycler, RecyclerView.State state) {
-        super.onLayoutChildren(recycler, state);
-        int itemCount = getItemCount();
-        if (itemCount <= 0 || state.isPreLayout()) {
+        this.recycler = recycler; // 二话不说，先把recycler保存了
+        if (state.isPreLayout()) {
             return;
         }
 
-        if (getChildCount() == 0) {
-            // 通过第一个itemView，获取一些中间变量
-            View itemView = recycler.getViewForPosition(0);
-            addView(itemView);
-            measureChildWithMargins(itemView, 0, 0);
-            mDecoratedMeasuredWidth = getDecoratedMeasuredWidth(itemView);
-            mDecoratedMeasuredHeight = getDecoratedMeasuredHeight(itemView);
-        }
+        buildLocationRects();
+
+        // 先回收放到缓存，后面会再次统一layout
+        detachAndScrapAttachedViews(recycler);
+        layoutItemsOnCreate(recycler);
+    }
+
+    private void buildLocationRects() {
+        locationRects.clear();
+        attachedItems.clear();
 
         int tempPosition = getPaddingTop();
+        int itemCount = getItemCount();
         for (int i = 0; i < itemCount; i++) {
+            // 1. 先计算出itemWidth和itemHeight
+            int viewType = adapter.getItemViewType(i);
+            int itemHeight;
+            if (viewTypeHeightMap.containsKey(viewType)) {
+                itemHeight = viewTypeHeightMap.get(viewType);
+            } else {
+                View itemView = recycler.getViewForPosition(i);
+                addView(itemView);
+                measureChildWithMargins(itemView, View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+                itemHeight = getDecoratedMeasuredHeight(itemView);
+                viewTypeHeightMap.put(viewType, itemHeight);
+            }
+
+            // 2. 组装Rect并保存
             Rect rect = new Rect();
             rect.left = getPaddingLeft();
             rect.top = tempPosition;
-            rect.right = mDecoratedMeasuredWidth - getPaddingRight();
-            rect.bottom = rect.top + mDecoratedMeasuredHeight;
+            rect.right = getWidth() - getPaddingRight();
+            rect.bottom = rect.top + itemHeight;
             locationRects.put(i, rect);
             attachedItems.put(i, false);
-
-            tempPosition = tempPosition + mDecoratedMeasuredHeight;
+            tempPosition = tempPosition + itemHeight;
         }
 
-        // 得到中间变量后，第一个View先回收放到缓存，后面会再次统一layout
-        detachAndScrapAttachedViews(recycler);
-        layoutItemsOnCreate(recycler);
-        computeMaxScroll();
+        if (itemCount == 0) {
+            maxScroll = 0;
+        } else {
+            computeMaxScroll();
+        }
+    }
+
+    /**
+     * 对外提供接口，找到第一个可视view的index
+     */
+    public int findFirstVisibleItemPosition() {
+        int count = locationRects.size();
+        Rect displayRect = new Rect(0, scroll, getWidth(), getHeight() + scroll);
+        for (int i = 0; i < count; i++) {
+            if (Rect.intersects(displayRect, locationRects.get(i)) &&
+                    attachedItems.get(i)) {
+                return i;
+            }
+        }
+        return 0;
     }
 
     /**
@@ -68,9 +113,14 @@ public class VegaLayoutManager extends RecyclerView.LayoutManager {
      */
     private void computeMaxScroll() {
         maxScroll = locationRects.get(locationRects.size() - 1).bottom - getHeight();
-        int childCount = getChildCount();
+        if (maxScroll < 0) {
+            maxScroll = 0;
+            return;
+        }
+
+        int itemCount = getItemCount();
         int screenFilledHeight = 0;
-        for (int i = childCount; i >= 0; i--) {
+        for (int i = itemCount - 1; i >= 0; i--) {
             Rect rect = locationRects.get(i);
             screenFilledHeight = screenFilledHeight + (rect.bottom - rect.top);
             if (screenFilledHeight > getHeight()) {
@@ -86,18 +136,20 @@ public class VegaLayoutManager extends RecyclerView.LayoutManager {
      */
     private void layoutItemsOnCreate(RecyclerView.Recycler recycler) {
         int itemCount = getItemCount();
-
+        Rect displayRect = new Rect(0, scroll, getWidth(), getHeight() + scroll);
         for (int i = 0; i < itemCount; i++) {
-            View childView = recycler.getViewForPosition(i);
-            addView(childView);
-            measureChildWithMargins(childView, 0, 0);
-            layoutItem(childView, locationRects.get(i));
-            attachedItems.put(i, true);
-            childView.setPivotY(0);
-            childView.setPivotX(childView.getMeasuredWidth() / 2);
-
-            if (locationRects.get(i).top > getHeight()) {
-                break;
+            Rect thisRect = locationRects.get(i);
+            if (Rect.intersects(displayRect, thisRect)) {
+                View childView = recycler.getViewForPosition(i);
+                addView(childView);
+                measureChildWithMargins(childView, View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED);
+                layoutItem(childView, locationRects.get(i));
+                attachedItems.put(i, true);
+                childView.setPivotY(0);
+                childView.setPivotX(childView.getMeasuredWidth() / 2);
+                if (thisRect.top - scroll > getHeight()) {
+                    break;
+                }
             }
         }
     }
@@ -106,16 +158,14 @@ public class VegaLayoutManager extends RecyclerView.LayoutManager {
     /**
      * 初始化的时候，layout子View
      */
-    private void layoutItemsOnScroll(RecyclerView.Recycler recycler, RecyclerView.State state, int dy) {
+    private void layoutItemsOnScroll() {
         int childCount = getChildCount();
-        if (state.isPreLayout() || childCount == 0) {
-            return;
-        }
-
         // 1. 已经在屏幕上显示的child
         int itemCount = getItemCount();
         Rect displayRect = new Rect(0, scroll, getWidth(), getHeight() + scroll);
-        for (int i = 0; i < childCount; i++) {
+        int firstVisiblePosition = -1;
+        int lastVisiblePosition = -1;
+        for (int i = childCount - 1; i >= 0; i--) {
             View child = getChildAt(i);
             if (child == null) {
                 continue;
@@ -127,44 +177,76 @@ public class VegaLayoutManager extends RecyclerView.LayoutManager {
                 attachedItems.put(position, false);
             } else {
                 // Item还在显示区域内，更新滑动后Item的位置
+                if (lastVisiblePosition < 0) {
+                    lastVisiblePosition = position;
+                }
+
+                if (firstVisiblePosition < 0) {
+                    firstVisiblePosition = position;
+                } else {
+                    firstVisiblePosition = Math.min(firstVisiblePosition, position);
+                }
+
                 layoutItem(child, locationRects.get(position)); //更新Item位置
             }
         }
 
-        // 2. 复用View添加
-        for (int i = 0; i < itemCount; i++) {
+        // 2. 复用View处理
+        if (firstVisiblePosition > 0) {
+            // 往前搜索复用
+            for (int i = firstVisiblePosition - 1; i >= 0; i--) {
+                if (Rect.intersects(displayRect, locationRects.get(i)) &&
+                        !attachedItems.get(i)) {
+                    reuseItemOnSroll(i, true);
+                } else {
+                    break;
+                }
+            }
+        }
+        // 往后搜索复用
+        for (int i = lastVisiblePosition + 1; i < itemCount; i++) {
             if (Rect.intersects(displayRect, locationRects.get(i)) &&
                     !attachedItems.get(i)) {
-                // 重新加载可见范围内的Item
-                View scrap = recycler.getViewForPosition(i);
-                measureChildWithMargins(scrap, 0, 0);
-                scrap.setPivotY(0);
-                scrap.setPivotX(scrap.getMeasuredWidth() / 2);
-                if (dy > 0) {
-                    addView(scrap);
-                } else {
-                    addView(scrap, 0);
-                }
-                // 将这个Item布局出来
-                layoutItem(scrap, locationRects.get(i));
-                attachedItems.put(i, true);
+                reuseItemOnSroll(i, false);
+            } else {
+                break;
             }
         }
     }
 
+    /**
+     * 复用position对应的View
+     */
+    private void reuseItemOnSroll(int position, boolean addViewFromTop) {
+        View scrap = recycler.getViewForPosition(position);
+        measureChildWithMargins(scrap, 0, 0);
+        scrap.setPivotY(0);
+        scrap.setPivotX(scrap.getMeasuredWidth() / 2);
+
+        if (addViewFromTop) {
+            addView(scrap, 0);
+        } else {
+            addView(scrap);
+        }
+        // 将这个Item布局出来
+        layoutItem(scrap, locationRects.get(position));
+        attachedItems.put(position, true);
+    }
+
+
     private void layoutItem(View child, Rect rect) {
         int topDistance = scroll - rect.top;
         int layoutTop, layoutBottom;
-        if (topDistance < mDecoratedMeasuredHeight && topDistance >= 0) {
-            float rate1 = (float) topDistance / mDecoratedMeasuredHeight;
+        int itemHeight = rect.bottom - rect.top;
+        if (topDistance < itemHeight && topDistance > 0) {
+            float rate1 = (float) topDistance / itemHeight;
             float rate2 = 1 - rate1 * rate1 / 3;
             float rate3 = 1 - rate1 * rate1;
             child.setScaleX(rate2);
             child.setScaleY(rate2);
             child.setAlpha(rate3);
-
             layoutTop = 0;
-            layoutBottom = mDecoratedMeasuredHeight;
+            layoutBottom = itemHeight;
         } else {
             child.setScaleX(1);
             child.setScaleY(1);
@@ -194,7 +276,10 @@ public class VegaLayoutManager extends RecyclerView.LayoutManager {
         }
         scroll += travel; //累计偏移量
         lastDy = dy;
-        layoutItemsOnScroll(recycler, state, dy);
+        if (!state.isPreLayout() && getChildCount() > 0) {
+            layoutItemsOnScroll();
+        }
+
         return travel;
     }
 

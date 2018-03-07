@@ -12,4 +12,6 @@ public interface MainActivityView {
     void onErrorPopularMovie(String error);
     void showProgress();
     void hideProgress();
+    void showCenterProgress();
+    void hideCenterProgress();
 }
